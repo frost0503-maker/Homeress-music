@@ -939,6 +939,8 @@ Waktu: [00:12.50]teks baris"></textarea>
   <p class="hint" id="oSyncI"></p>
   <div class="row"><input type="password" id="oGT" placeholder="Token GitHub (izin gist) untuk sinkron lewat Gist" autocomplete="off"><button class="btn" id="oGTs">Simpan</button></div>
   <p class="hint">Token hanya disimpan di browser perangkat ini. Isi token yang sama di tiap perangkat. Kosongkan lalu Simpan untuk menghapus.</p>
+  <div class="row"><input type="text" id="oRT" placeholder="Kode real-time (sama di semua perangkat)" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="btn" id="oRTr">Acak</button><button class="btn" id="oRTs">Simpan</button></div>
+  <p class="hint">Real-time (lagu aktif, posisi, tombol kontrol antar perangkat) lewat ntfy.sh. Isi kode yang sama di semua perangkat. Siapa pun yang tahu kode ini bisa melihat dan mengendalikan lagu aktifmu, jadi pakai kode acak dari tombol Acak. Kosongkan lalu Simpan untuk mematikan.</p>
   <div class="row" id="oHereR" style="display:none"><button class="btn" id="oHere">Putar di perangkat ini</button></div>
   <div class="grp">
     <label class="fl volume-setting">Volume
@@ -1690,7 +1692,10 @@ $('#hPlay').onclick=()=>{const v=VIS.length?VIS:S.list.map(x=>x.id);if(!v.length
 var SY={on:false,conn:false,es:null,active:false,n:1,pushed:0,packFor:null,dev:(()=>{let d=sessionStorage.getItem('kkdev');if(!d){d='d'+Math.random().toString(36).slice(2,9);sessionStorage.setItem('kkdev',d)}return d})(),name:/Android|iPhone|iPad|Mobile/i.test(navigator.userAgent)?'HP / tablet':'Komputer'};
 const syJ=u=>fetch(u).then(r=>r.json());
 const syPost=(u,b,m)=>fetch(u,{method:m||'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).catch(()=>{});
-function sendCmd(cmd,x){
+function sendCmd(cmd,x){if(SY.rt){const o=Object.assign({k:'cmd',cmd,from:SY.dev,to:SY.mdev,t:Date.now()},x||{});
+    if(cmd==='vol'){rtSend(o);return}
+    SY.cmdWait=true;clearTimeout(SY.ct);SY.ct=setTimeout(()=>{if(SY.cmdWait&&P.mirror)takeOver(cmd,x||{})},3500);rtSend(o);return}
+  if(SY.gist){if(cmd!=='vol')takeOver(cmd,x||{});return}
   if(cmd!=='vol'){SY.cmdWait=true;clearTimeout(SY.ct);
   SY.ct=setTimeout(()=>{if(SY.cmdWait&&P.mirror)toast('Perangkat pemutar tidak merespons. Cek tab pemutarnya, atau pilih Putar di perangkat ini di Opsi.');SY.cmdWait=false},3500)}
   fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({cmd,from:SY.dev},x||{}))})
@@ -1705,7 +1710,7 @@ function takeOver(cmd,x){SY.cmdWait=false;clearTimeout(SY.ct);if(!P.mirror)retur
   const at=cmd==='seek'&&x.pos!=null?x.pos:pos;P.resume=at;
   startSong(S.cur,{play:cmd==='play'});setTimeout(()=>{if(P.mode!=='audio')seek(at)},900)}
 async function syStart(){if(SY.es||!/^https?:$/.test(location.protocol)||S.syncOn===false)return;
-  try{const r=await syJ('/api/ping');if(!r.kk){gStart();syInfo();return}}catch(e){gStart();syInfo();return}
+  try{const r=await syJ('/api/ping');if(!r.kk){gStart();rtStart();syInfo();return}}catch(e){gStart();rtStart();syInfo();return}
   SY.on=true;const es=SY.es=new EventSource('/api/events?id='+SY.dev);
   es.onopen=()=>{SY.conn=true;syInfo();syLib()};es.onerror=()=>{SY.conn=false;syInfo()};
   es.addEventListener('hello',e=>{const d=JSON.parse(e.data);SY.n=d.n;if(d.state)mApply(d.state,d.now);syInfo()});
@@ -1715,7 +1720,7 @@ async function syStart(){if(SY.es||!/^https?:$/.test(location.protocol)||S.syncO
   es.addEventListener('dev',e=>{SY.n=JSON.parse(e.data).n;syInfo()});
   es.addEventListener('gone',()=>{if(P.mirror){P.mirror=false;P.playing=false;P.t=now();ui();toast('Perangkat pemutar terputus')}syInfo()});
   setInterval(()=>{if(SY.active&&P.playing&&!P.mirror)pubState()},2500)}
-function pubState(){if(SY.gist||!SY.on||!SY.conn||P.mirror||!loaded||!S.cur)return;const m=meta(S.cur);if(!m)return;
+function pubState(){if(!SY.on||!SY.conn||P.mirror||!loaded||!S.cur)return;if(SY.gist||SY.rt){gPub();return}const m=meta(S.cur);if(!m)return;
   const b={dev:SY.dev,name:SY.name,song:S.cur,playing:P.playing,pos:now(),rate:P.audio.playbackRate||1,dur:P.dur||0,vol:S.vol==null?1:S.vol,q:(ord(),{ids:Q.ids.slice(),sh:Q.sh?Q.sh.slice():null,shuf:!!S.shuf,rep:S.repeat})};
   if(SY.packFor!==S.cur){b.pack={m:Object.assign({},m),s:S.songs[S.cur]};SY.packFor=S.cur}
   syPost('/api/state',b)}
@@ -1744,7 +1749,7 @@ async function syPull(){try{syAdopt(await syJ('/api/lib'))}catch(e){}}
 function syPush(){if(SY.gist){gPush();return}clearTimeout(SY.lt);SY.lt=setTimeout(()=>syPost('/api/lib',{from:SY.dev,mod:S.mod,data:{list:S.list,songs:S.songs,pl:S.pl,acov:S.acov||{},favSongs:S.favSongs||{},prefs:{shuf:!!S.shuf,repeat:S.repeat,pm:S.pm||0}}},'PUT'),1500)}
 function syInfo(){const el=$('#oSyncI');if(!el)return;
   el.textContent=!SY.on?(S.syncOn===false?'Sinkron dimatikan.':'Server sinkron tidak ditemukan. Jalankan lewat server.py agar perangkat saling terhubung.'):SY.conn?(P.mirror?'Mengikuti perangkat lain. ':'Perangkat ini pemutar. ')+SY.n+' perangkat terhubung.':'Menyambung ulang…';
-  if(SY.gist)el.textContent=SY.gerr||('Sinkron lewat GitHub Gist aktif'+(SY.gt?' (terakhir '+new Date(SY.gt).toLocaleTimeString()+').':'.'));else if(SY.gerr)el.textContent=SY.gerr;else if(!SY.on&&S.syncOn!==false&&!gTok())el.textContent+=' Atau isi token GitHub di bawah untuk sinkron lewat Gist.';
+  if(SY.rt)el.textContent='Real-time aktif'+(P.mirror?', mengikuti perangkat lain':'')+(SY.gist?'. Pustaka lewat Gist aktif.':'.');else if(SY.gist)el.textContent=SY.gerr||('Sinkron lewat GitHub Gist aktif'+(P.mirror?', mengikuti perangkat lain':'')+(SY.gt?' (terakhir '+new Date(SY.gt).toLocaleTimeString()+').':'.'));else if(SY.gerr)el.textContent=SY.gerr;else if(!SY.on&&S.syncOn!==false&&!gTok())el.textContent+=' Atau isi token GitHub di bawah untuk sinkron lewat Gist.';
   const h=$('#oHereR');if(h)h.style.display=P.mirror?'':'none'}
 /* ---- Sinkron lewat GitHub Gist (untuk hosting statis seperti GitHub Pages) ---- */
 const GK={t:'kkgt',i:'kkgid'};
@@ -1772,18 +1777,76 @@ async function gSync(retry){if(!gTok()||SY.gbusy||S.syncOn===false)return;SY.gbu
     SY.gerr='';SY.on=SY.conn=SY.gist=true;SY.gt=Date.now()}
   catch(e){if(e.status===404&&gId()&&!retry){try{localStorage.removeItem(GK.i)}catch(_){}SY.gbusy=false;return gSync(true)}
     SY.gerr=e.status===401?'Token ditolak GitHub. Periksa token dan izin gist.':'Gagal terhubung ke GitHub ('+(e.message||'?')+').'}
-  SY.gbusy=false;syInfo()}
+  SY.gbusy=false;syInfo();if(SY.gist)gPoll()}
 function gPush(){clearTimeout(SY.lt);SY.lt=setTimeout(async()=>{if(SY.gbusy){gPush();return}SY.gbusy=true;
   try{await gWrite();SY.gerr='';SY.gt=Date.now()}catch(e){SY.gerr='Gagal menyimpan ke GitHub ('+(e.message||'?')+').'}
   SY.gbusy=false;syInfo()},3000)}
+/* lagu yang sedang diputar lewat Gist: gist kedua yang kecil, jadi polling murah (delay beberapa detik) */
+const gSid=()=>{try{return localStorage.getItem('kkgsid')||''}catch(e){return ''}};
+async function gsFind(){let id=gSid();if(id)return id;
+  if(Date.now()-(SY.gsT||0)<30000)return '';SY.gsT=Date.now();
+  const l=await gApi('/gists?per_page=100');const g=l.find(x=>x.description==='karaoke-yorushika-state'&&x.files&&x.files['state.json']);
+  if(g){id=g.id;try{localStorage.setItem('kkgsid',id)}catch(e){}}return id||''}
+async function gsWrite(o){const body={files:{'state.json':{content:JSON.stringify(o)}}};const id=gSid();
+  if(id){try{await gApi('/gists/'+id,{method:'PATCH',body:JSON.stringify(body)});return}catch(e){if(e.status!==404)throw e;try{localStorage.removeItem('kkgsid')}catch(_){}}}
+  body.description='karaoke-yorushika-state';body.public=false;
+  const g=await gApi('/gists',{method:'POST',body:JSON.stringify(body)});try{localStorage.setItem('kkgsid',g.id)}catch(e){}}
+async function gsRead(){const id=await gsFind();if(!id)return null;
+  const g=await gApi('/gists/'+id,{cache:'no-cache'});const f=g.files&&g.files['state.json'];if(!f)return null;
+  try{return JSON.parse(f.content)}catch(e){return null}}
+function gBuild(){const m=meta(S.cur);if(!m)return null;
+  return{k:'state',dev:SY.dev,name:SY.name,song:S.cur,playing:P.playing,pos:now(),rate:P.audio.playbackRate||1,dur:P.dur||0,vol:S.vol==null?1:S.vol,q:(ord(),{ids:Q.ids.slice(),sh:Q.sh?Q.sh.slice():null,shuf:!!S.shuf,rep:S.repeat}),t0:Date.now()}}
+const gSig=b=>JSON.stringify([b.song,b.playing,b.q,Math.round(b.vol*20)]);
+function gPub(){if(SY.gpt)return;const b=gBuild();if(!b)return;const L=SY.gl;
+  const exp=L?L.pos+(L.playing?(b.t0-L.t0)/1000*(L.rate||1):0):0;
+  const due=!L||gSig(b)!==L.sig||Math.abs(b.pos-exp)>2.5||(b.playing&&b.t0-L.t0>(SY.rt?10000:15000));
+  if(!due)return;
+  SY.gpt=setTimeout(async()=>{SY.gpt=0;if(P.mirror||!(SY.gist||SY.rt))return;const c=gBuild();if(!c)return;c.sig=gSig(c);SY.gl=c;SY.gpw=Date.now();
+    try{if(SY.rt)rtSend(c);else await gsWrite(c)}catch(e){SY.gerr='Gagal membagikan lagu aktif ke GitHub ('+(e.message||'?')+').';syInfo()}},Math.max(100,(SY.rt?300:2000)-(Date.now()-(SY.gpw||0))))}
+async function gPoll(){if(SY.rt||!SY.gist||!gTok()||S.syncOn===false||SY.gpl||document.hidden)return;SY.gpl=true;
+  try{const st=await gsRead();
+    if(st&&st.dev&&st.dev!==SY.dev&&st.t0){const age=Date.now()-st.t0,alive=st.playing?age<75000:age<180000;
+      if(alive){if(st.t0>(SY.gseen||0)&&st.t0>((SY.gl&&SY.gl.t0)||0)){SY.gseen=st.t0;mApply(st,Date.now())}}
+      else if(P.mirror&&st.playing){P.mirror=false;P.playing=false;P.t=now();ui();toast('Perangkat pemutar terputus');syInfo()}}}
+  catch(e){if(e.status===404)try{localStorage.removeItem('kkgsid')}catch(_){}}
+  SY.gpl=false}
+/* ---- Real-time lewat ntfy.sh (SSE): status lagu aktif + tombol kontrol antar perangkat ---- */
+const rtCode=()=>{try{return localStorage.getItem('kkrt')||''}catch(e){return ''}};
+function rtSend(o){const c=rtCode();if(!c)return;let b=JSON.stringify(o);
+  if(b.length>3800&&o.q)b=JSON.stringify(Object.assign({},o,{q:Object.assign({},o.q,{sh:null})}));
+  fetch('https://ntfy.sh/kk-'+c,{method:'POST',body:b}).catch(()=>{})}
+function rtMsg(e){let m,o;try{m=JSON.parse(e.data);if(m.event!=='message')return;o=JSON.parse(m.message)}catch(_){return}
+  if(!o)return;
+  if(o.k==='state'){const st=o;if(!st.dev||!st.t0||st.dev===SY.dev)return;
+    const age=Date.now()-st.t0,alive=st.playing?age<75000:age<180000;
+    if(!alive||st.t0<=(SY.gseen||0)||st.t0<=((SY.gl&&SY.gl.t0)||0))return;
+    SY.gseen=st.t0;SY.rtlast=st;SY.mdev=st.dev;mApply(st,Date.now())}
+  else if(o.k==='cmd'){if(o.from===SY.dev||o.to!==SY.dev||P.mirror||Date.now()-(o.t||0)>8000)return;
+    SY.cseen=SY.cseen||{};if(SY.cseen[m.id])return;SY.cseen[m.id]=1;execCmd(o)}}
+function rtStart(){const c=rtCode();if(!c||S.syncOn===false||SY.rtes||!window.EventSource)return;
+  const es=SY.rtes=new EventSource('https://ntfy.sh/kk-'+c+'/sse?since=2m');
+  es.onopen=()=>{SY.rt=true;SY.on=SY.conn=true;syInfo()};
+  es.onerror=()=>{SY.rt=false;syInfo()};
+  es.onmessage=rtMsg;
+  if(!SY.rti)SY.rti=setInterval(()=>{const l=SY.rtlast;
+    if(P.mirror&&l&&l.playing&&Date.now()-l.t0>75000){P.mirror=false;P.playing=false;P.t=now();ui();toast('Perangkat pemutar terputus');syInfo();SY.rtlast=null}},5000);
+  if(!SY.rtv){SY.rtv=1;document.addEventListener('visibilitychange',()=>{
+    if(!document.hidden&&rtCode()&&S.syncOn!==false&&(!SY.rtes||SY.rtes.readyState===2)){rtStop();rtStart()}})}}
+function rtStop(){if(SY.rtes){SY.rtes.close();SY.rtes=null}SY.rt=false;clearInterval(SY.rti);SY.rti=0;if(!SY.gist&&!SY.es)SY.on=SY.conn=false}
 function gStart(){if(!gTok())return;gSync();
-  if(!SY.gtimer){SY.gtimer=setInterval(()=>{if(!document.hidden)gSync()},60000);
-    document.addEventListener('visibilitychange',()=>{if(!document.hidden)gSync()})}}
+  if(!SY.gtimer){SY.gtimer=setInterval(()=>{if(!document.hidden)gSync()},60000);SY.gpi=setInterval(gPoll,5000);
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden){gSync();gPoll()}})}}
 $('#oGTs').onclick=()=>{const v=$('#oGT').value.trim();
   try{localStorage.removeItem(GK.i);if(v)localStorage.setItem(GK.t,v);else{localStorage.removeItem(GK.t);SY.gist=false;SY.on=SY.conn=false}}catch(e){}
   $('#oGT').value='';SY.gerr='';if(v){toast('Menyambung ke GitHub…');gStart()}else toast('Token dihapus');syInfo()};
 if(gTok())$('#oGT').placeholder='Token tersimpan (isi lagi untuk mengganti)';
-$('#oSync').onchange=e=>{S.syncOn=e.target.checked;save();if(S.syncOn)syStart();else{if(SY.es){SY.es.close();SY.es=null}SY.on=SY.conn=false;SY.gist=false;P.mirror=false;syInfo()}};
+$('#oRTr').onclick=()=>{const a=new Uint8Array(12);crypto.getRandomValues(a);$('#oRT').value=Array.from(a,x=>x.toString(36).padStart(2,'0')).join('').slice(0,24)};
+$('#oRTs').onclick=()=>{const v=$('#oRT').value.trim().replace(/[^A-Za-z0-9_-]/g,'');
+  if(v&&v.length<12){toast('Kode minimal 12 karakter. Pakai tombol Acak.');return}
+  try{if(v)localStorage.setItem('kkrt',v);else localStorage.removeItem('kkrt')}catch(e){}
+  rtStop();$('#oRT').value=v;if(v){rtStart();toast('Menyambung real-time…')}else toast('Real-time dimatikan');syInfo()};
+if(rtCode())$('#oRT').value=rtCode();
+$('#oSync').onchange=e=>{S.syncOn=e.target.checked;save();if(S.syncOn)syStart();else{if(SY.es){SY.es.close();SY.es=null}rtStop();SY.on=SY.conn=false;SY.gist=false;P.mirror=false;syInfo()}};
 $('#oMOpen').onchange=e=>{S.mOpen=e.target.checked;save()};
 $('#oHere').onclick=()=>{const pos=now();P.mirror=false;SY.active=true;P.resume=pos;closeSheets();startSong(S.cur,{play:true});setTimeout(()=>{if(P.mode!=='audio')seek(pos)},900);syInfo()};
 /* cari otomatis: cover (Apple Music / iTunes) + lirik berwaktu (lrclib) */
