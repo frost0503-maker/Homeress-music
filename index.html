@@ -937,6 +937,11 @@ Waktu: [00:12.50]teks baris"></textarea>
   <h3 class="sh" style="margin-top:6px">Sinkron antar perangkat</h3>
   <div class="grp"><label class="chk"><input type="checkbox" id="oSync"> Sinkron antar perangkat</label><label class="chk"><input type="checkbox" id="oMOpen"> Buka layar lirik otomatis saat mengikuti</label></div>
   <p class="hint" id="oSyncI"></p>
+  <details class="grp" id="oCx"><summary><span><i id="oCxD" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#888;margin-right:10px"></i>Status koneksi</span></summary>
+    <div id="oCxB" style="padding:6px 16px 4px;font-size:14px;line-height:1.55"></div>
+    <div class="row"><button class="btn" id="oPing">Tes ping ke perangkat lain</button></div>
+    <p class="hint" style="margin:10px 16px 14px">Tes ping mengirim pesan lewat real-time dan menunggu balasan dari perangkat lain (keduanya harus membuka file versi terbaru).</p>
+  </details>
   <div class="row"><input type="password" id="oGT" placeholder="Token GitHub (izin gist) untuk sinkron lewat Gist" autocomplete="off"><button class="btn" id="oGTs">Simpan</button></div>
   <p class="hint">Token hanya disimpan di browser perangkat ini. Isi token yang sama di tiap perangkat. Kosongkan lalu Simpan untuk menghapus.</p>
   <div class="row"><input type="text" id="oRT" placeholder="Kode real-time (sama di semua perangkat)" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="btn" id="oRTr">Acak</button><button class="btn" id="oRTs">Simpan</button></div>
@@ -1692,7 +1697,7 @@ $('#hPlay').onclick=()=>{const v=VIS.length?VIS:S.list.map(x=>x.id);if(!v.length
 var SY={on:false,conn:false,es:null,active:false,n:1,pushed:0,packFor:null,dev:(()=>{let d=sessionStorage.getItem('kkdev');if(!d){d='d'+Math.random().toString(36).slice(2,9);sessionStorage.setItem('kkdev',d)}return d})(),name:/Android|iPhone|iPad|Mobile/i.test(navigator.userAgent)?'HP / tablet':'Komputer'};
 const syJ=u=>fetch(u).then(r=>r.json());
 const syPost=(u,b,m)=>fetch(u,{method:m||'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).catch(()=>{});
-function sendCmd(cmd,x){if(SY.rt){const o=Object.assign({k:'cmd',cmd,from:SY.dev,to:SY.mdev,t:Date.now()},x||{});
+function sendCmd(cmd,x){if(SY.rt){const o=Object.assign({k:'cmd',cmd,from:SY.dev,to:SY.mdev,t:tNow()},x||{});
     if(cmd==='vol'){rtSend(o);return}
     SY.cmdWait=true;clearTimeout(SY.ct);SY.ct=setTimeout(()=>{if(SY.cmdWait&&P.mirror)takeOver(cmd,x||{})},3500);rtSend(o);return}
   if(SY.gist){if(cmd!=='vol')takeOver(cmd,x||{});return}
@@ -1752,6 +1757,18 @@ function syInfo(){const el=$('#oSyncI');if(!el)return;
   if(SY.rt)el.textContent='Real-time aktif'+(P.mirror?', mengikuti perangkat lain':'')+(SY.gist?'. Pustaka lewat Gist aktif.':'.');else if(SY.gist)el.textContent=SY.gerr||('Sinkron lewat GitHub Gist aktif'+(P.mirror?', mengikuti perangkat lain':'')+(SY.gt?' (terakhir '+new Date(SY.gt).toLocaleTimeString()+').':'.'));else if(SY.gerr)el.textContent=SY.gerr;else if(!SY.on&&S.syncOn!==false&&!gTok())el.textContent+=' Atau isi token GitHub di bawah untuk sinkron lewat Gist.';
   const h=$('#oHereR');if(h)h.style.display=P.mirror?'':'none'}
 /* ---- Sinkron lewat GitHub Gist (untuk hosting statis seperti GitHub Pages) ---- */
+/* Jam bersama: tiap perangkat mengukur selisih jam lokalnya terhadap UTC dari server (titik tengah RTT, sampel RTT terkecil).
+   Semua cap waktu antar perangkat (t0 status, umur pesan, perintah) memakai tNow(), jadi jam perangkat yang tidak sama tidak menggeser lirik. */
+SY.net=0;
+const tNow=()=>Date.now()+SY.net;
+async function clockSync(){
+  const src=[
+    async()=>{const r=await jget('https://worldtimeapi.org/api/timezone/Etc/UTC',4000);return Date.parse(String(r.utc_datetime).replace(/(\.\d{3})\d*/,'$1'))},
+    async()=>{const r=await jget('https://timeapi.io/api/time/current/zone?timeZone=UTC',4000);return Date.parse(String(r.dateTime).replace(/(\.\d{3})\d*$/,'$1')+'Z')}];
+  for(const f of src){let best=null;
+    for(let i=0;i<3;i++){try{const a=Date.now(),s=await f(),b=Date.now();if(!isFinite(s))throw 0;const rtt=b-a;if(!best||rtt<best.rtt)best={rtt,off:s+rtt/2-b}}catch(e){break}}
+    if(best){SY.net=best.off;SY.netT=Date.now();return true}}
+  return false}
 const GK={t:'kkgt',i:'kkgid'};
 const gTok=()=>{try{return localStorage.getItem(GK.t)||''}catch(e){return ''}};
 const gId=()=>{try{return localStorage.getItem(GK.i)||''}catch(e){return ''}};
@@ -1795,7 +1812,7 @@ async function gsRead(){const id=await gsFind();if(!id)return null;
   const g=await gApi('/gists/'+id,{cache:'no-cache'});const f=g.files&&g.files['state.json'];if(!f)return null;
   try{return JSON.parse(f.content)}catch(e){return null}}
 function gBuild(){const m=meta(S.cur);if(!m)return null;
-  return{k:'state',dev:SY.dev,name:SY.name,song:S.cur,playing:P.playing,pos:now(),rate:P.audio.playbackRate||1,dur:P.dur||0,vol:S.vol==null?1:S.vol,q:(ord(),{ids:Q.ids.slice(),sh:Q.sh?Q.sh.slice():null,shuf:!!S.shuf,rep:S.repeat}),t0:Date.now()}}
+  return{k:'state',dev:SY.dev,name:SY.name,song:S.cur,playing:P.playing,pos:now(),rate:P.audio.playbackRate||1,dur:P.dur||0,vol:S.vol==null?1:S.vol,q:(ord(),{ids:Q.ids.slice(),sh:Q.sh?Q.sh.slice():null,shuf:!!S.shuf,rep:S.repeat}),t0:tNow()}}
 const gSig=b=>JSON.stringify([b.song,b.playing,b.q,Math.round(b.vol*20)]);
 function gPub(){if(SY.gpt)return;const b=gBuild();if(!b)return;const L=SY.gl;
   const exp=L?L.pos+(L.playing?(b.t0-L.t0)/1000*(L.rate||1):0):0;
@@ -1805,23 +1822,57 @@ function gPub(){if(SY.gpt)return;const b=gBuild();if(!b)return;const L=SY.gl;
     try{if(SY.rt)rtSend(c);else await gsWrite(c)}catch(e){SY.gerr='Gagal membagikan lagu aktif ke GitHub ('+(e.message||'?')+').';syInfo()}},Math.max(100,(SY.rt?300:2000)-(Date.now()-(SY.gpw||0))))}
 async function gPoll(){if(SY.rt||!SY.gist||!gTok()||S.syncOn===false||SY.gpl||document.hidden)return;SY.gpl=true;
   try{const st=await gsRead();
-    if(st&&st.dev&&st.dev!==SY.dev&&st.t0){const age=Date.now()-st.t0,alive=st.playing?age<75000:age<180000;
-      if(alive){if(st.t0>(SY.gseen||0)&&st.t0>((SY.gl&&SY.gl.t0)||0)){SY.gseen=st.t0;mApply(st,Date.now())}}
+    if(st&&st.dev&&st.dev!==SY.dev&&st.t0){notePeer(st);const age=tNow()-st.t0,alive=st.playing?age<75000:age<180000;
+      if(alive){if(st.t0>(SY.gseen||0)&&st.t0>((SY.gl&&SY.gl.t0)||0)){SY.gseen=st.t0;mApply(st,tNow())}}
       else if(P.mirror&&st.playing){P.mirror=false;P.playing=false;P.t=now();ui();toast('Perangkat pemutar terputus');syInfo()}}}
   catch(e){if(e.status===404)try{localStorage.removeItem('kkgsid')}catch(_){}}
-  SY.gpl=false}
+  SY.gpl=false;SY.gpt2=Date.now()}
 /* ---- Real-time lewat ntfy.sh (SSE): status lagu aktif + tombol kontrol antar perangkat ---- */
 const rtCode=()=>{try{return localStorage.getItem('kkrt')||''}catch(e){return ''}};
+/* ---- Menu status koneksi antar perangkat ---- */
+function notePeer(o){if(!o||!o.from&&!o.dev)return;
+  SY.peer={dev:o.dev||o.from,name:o.name||'Perangkat lain',seen:Date.now(),lat:o.t0||o.t?tNow()-(o.t0||o.t):null,playing:o.playing,song:o.song,role:o.role||(o.k==='state'?(o.playing?'pemutar':'siaga'):'')}}
+const cxAgo=ms=>ms<1500?'baru saja':ms<60000?Math.round(ms/1000)+' dtk lalu':ms<3600000?Math.round(ms/60000)+' mnt lalu':Math.round(ms/3600000)+' jam lalu';
+function cxRender(){const box=$('#oCxB');if(!box)return;
+  const mode=SY.rt?'Real-time (ntfy.sh)':SY.gist?'GitHub Gist':SY.es?'Server lokal (server.py)':'Belum ada';
+  const rows=[];let level=0;/* 0 merah, 1 kuning, 2 hijau */
+  const link=SY.rt?'Terhubung':SY.es?(SY.conn?'Terhubung':'Menyambung ulang…'):SY.gist?(SY.gerr?'Bermasalah':(gTok()?'Token aktif':'Tanpa token')):rtCode()?'Menyambung…':'Tidak aktif';
+  rows.push(['Mode',mode]);rows.push(['Koneksi ke layanan',link+(SY.gist&&!SY.rt&&SY.gt?' · simpan terakhir '+cxAgo(Date.now()-SY.gt):'')]);
+  if(SY.gerr&&!SY.rt)rows.push(['Galat',SY.gerr]);
+  const online=SY.rt||(SY.es&&SY.conn)||(SY.gist&&!SY.gerr);if(online)level=1;
+  rows.push(['Peran perangkat ini',P.mirror?'Mengikuti perangkat lain':(P.playing?'Pemutar':'Siaga')]);
+  const pe=SY.peer;
+  if(SY.es&&!SY.rt&&!SY.gist){rows.push(['Perangkat terhubung',SY.n+' (termasuk ini)']);if(SY.n>1)level=2}
+  else if(pe){const a=Date.now()-pe.seen,m=meta(pe.song);
+    rows.push(['Perangkat lain',esc(pe.name)+' · terlihat '+cxAgo(a)]);
+    rows.push(['Statusnya',(pe.role?esc(pe.role)+', ':'')+(pe.playing?'memutar':'jeda')+(m?' · '+esc(m.title||m.title2||''):'')]);
+    if(pe.lat!=null&&isFinite(pe.lat)&&SY.netT)rows.push(['Tunda pesan terakhir',Math.max(0,Math.round(pe.lat))+' ms']);
+    if(a<20000||(pe.playing&&a<80000)||(!pe.playing&&a<200000))level=2}
+  else rows.push(['Perangkat lain','Belum terlihat. Buka aplikasi di perangkat satunya, atau tekan Tes ping.']);
+  rows.push(['Jam bersama',SY.netT?'Selaras (selisih jam perangkat ini '+(SY.net>=0?'+':'')+Math.round(SY.net)+' ms, dicek '+cxAgo(Date.now()-SY.netT)+')':'Belum selaras: memakai jam perangkat, lirik bisa meleset']);
+  const g=SY.pg;if(g){if(g.res){level=2;rows.push(['Tes ping','Dibalas '+esc(g.res.name||'perangkat lain')+' dalam '+g.rtt+' ms (pulang-pergi)'])}
+    else if(Date.now()-g.a<6000)rows.push(['Tes ping','Menunggu balasan…']);
+    else rows.push(['Tes ping','Tidak ada balasan dalam 6 dtk'])}
+  box.innerHTML=rows.map(r=>'<div style="display:flex;gap:12px;justify-content:space-between;padding:3px 0"><span style="color:var(--dim,#888);flex:none">'+r[0]+'</span><span style="text-align:right;min-width:0;overflow-wrap:anywhere">'+(/^(Mode|Koneksi ke layanan|Peran|Perangkat terhubung|Jam|Tunda)/.test(r[0])||r[0]==='Galat'?esc(r[1]):r[1])+'</span></div>').join('');
+  const d=$('#oCxD');if(d)d.style.background=['#ef5350','#f5b942','#3ecf8e'][level]}
+{const cx=$('#oCx');if(cx){cx.addEventListener('toggle',cxRender);setInterval(()=>{if(cx.open&&!document.hidden)cxRender()},1000)}
+ const pb=$('#oPing');if(pb)pb.onclick=()=>{if(!SY.rt){toast('Tes ping hanya untuk mode real-time. Isi kode real-time di kedua perangkat.');return}
+  const pid=Math.random().toString(36).slice(2,9);SY.pg={pid,a:Date.now(),res:null};cxRender();rtSend({k:'ping',from:SY.dev,pid,name:SY.name,t:tNow()});setTimeout(cxRender,6200)}}
 function rtSend(o){const c=rtCode();if(!c)return;let b=JSON.stringify(o);
   if(b.length>3800&&o.q)b=JSON.stringify(Object.assign({},o,{q:Object.assign({},o.q,{sh:null})}));
   fetch('https://ntfy.sh/kk-'+c,{method:'POST',body:b}).catch(()=>{})}
 function rtMsg(e){let m,o;try{m=JSON.parse(e.data);if(m.event!=='message')return;o=JSON.parse(m.message)}catch(_){return}
   if(!o)return;
-  if(o.k==='state'){const st=o;if(!st.dev||!st.t0||st.dev===SY.dev)return;
-    const age=Date.now()-st.t0,alive=st.playing?age<75000:age<180000;
+  if(o.k==='ping'){if(o.from===SY.dev||tNow()-(o.t||0)>15000)return;
+    SY.cseen=SY.cseen||{};if(SY.cseen[m.id])return;SY.cseen[m.id]=1;notePeer(o);
+    rtSend({k:'pong',from:SY.dev,to:o.from,pid:o.pid,name:SY.name,t:tNow(),role:P.mirror?'mengikuti':(P.playing?'pemutar':'siaga'),playing:!!P.playing,song:S.cur});return}
+  if(o.k==='pong'){if(o.to!==SY.dev||!SY.pg||SY.pg.pid!==o.pid||SY.pg.res)return;
+    SY.pg.rtt=Date.now()-SY.pg.a;SY.pg.res=o;notePeer(o);cxRender();return}
+  if(o.k==='state'){const st=o;if(!st.dev||!st.t0||st.dev===SY.dev)return;notePeer(st);
+    const age=tNow()-st.t0,alive=st.playing?age<75000:age<180000;
     if(!alive||st.t0<=(SY.gseen||0)||st.t0<=((SY.gl&&SY.gl.t0)||0))return;
-    SY.gseen=st.t0;SY.rtlast=st;SY.mdev=st.dev;mApply(st,Date.now())}
-  else if(o.k==='cmd'){if(o.from===SY.dev||o.to!==SY.dev||P.mirror||Date.now()-(o.t||0)>8000)return;
+    SY.gseen=st.t0;SY.rtlast=st;SY.mdev=st.dev;mApply(st,tNow())}
+  else if(o.k==='cmd'){if(o.from===SY.dev||o.to!==SY.dev||P.mirror||tNow()-(o.t||0)>8000)return;
     SY.cseen=SY.cseen||{};if(SY.cseen[m.id])return;SY.cseen[m.id]=1;execCmd(o)}}
 function rtStart(){const c=rtCode();if(!c||S.syncOn===false||SY.rtes||!window.EventSource)return;
   const es=SY.rtes=new EventSource('https://ntfy.sh/kk-'+c+'/sse?since=2m');
@@ -1829,7 +1880,7 @@ function rtStart(){const c=rtCode();if(!c||S.syncOn===false||SY.rtes||!window.Ev
   es.onerror=()=>{SY.rt=false;syInfo()};
   es.onmessage=rtMsg;
   if(!SY.rti)SY.rti=setInterval(()=>{const l=SY.rtlast;
-    if(P.mirror&&l&&l.playing&&Date.now()-l.t0>75000){P.mirror=false;P.playing=false;P.t=now();ui();toast('Perangkat pemutar terputus');syInfo();SY.rtlast=null}},5000);
+    if(P.mirror&&l&&l.playing&&tNow()-l.t0>75000){P.mirror=false;P.playing=false;P.t=now();ui();toast('Perangkat pemutar terputus');syInfo();SY.rtlast=null}},5000);
   if(!SY.rtv){SY.rtv=1;document.addEventListener('visibilitychange',()=>{
     if(!document.hidden&&rtCode()&&S.syncOn!==false&&(!SY.rtes||SY.rtes.readyState===2)){rtStop();rtStart()}})}}
 function rtStop(){if(SY.rtes){SY.rtes.close();SY.rtes=null}SY.rt=false;clearInterval(SY.rti);SY.rti=0;if(!SY.gist&&!SY.es)SY.on=SY.conn=false}
@@ -1913,7 +1964,7 @@ $('#hm').onclick=e=>{const it=e.target.closest('button');if(!it)return;$('#hs').
 document.addEventListener('pointerdown',e=>{if(!e.target.closest('#hm,#hsb'))menuOpen(false)});
 addEventListener('keydown',e=>{if(e.key==='Escape'&&$('#hm').classList.contains('on')){menuOpen(false);$('#hsb').focus()}});
 $('#home').addEventListener('scroll',()=>menuOpen(false),{passive:true});addEventListener('resize',()=>menuOpen(false));
-function initExtra(){setTimeout(syStart,300);try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
+function initExtra(){clockSync();setInterval(clockSync,300000);document.addEventListener('visibilitychange',()=>{if(!document.hidden&&Date.now()-(SY.netT||0)>60000)clockSync()});setTimeout(syStart,300);try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
   S.spd=1;P.audio.volume=S.vol==null?1:S.vol;applyOpt();$('#hs').value=S.sort||'man';syncHs();renderHome();
   if(S.cur&&meta(S.cur)){if(S.pos&&S.pos[S.cur]>2)P.resume=S.pos[S.cur];startSong(S.cur,{})}}
 furi();ui();renderHome();setTab('home');setView('home');if(useEmb&&L0.list)toast('Data dimuat dari file ini (lebih baru daripada data di browser ini)');save();setInterval(logic,500);requestAnimationFrame(tick);initExtra();
